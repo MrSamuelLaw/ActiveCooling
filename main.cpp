@@ -14,9 +14,12 @@ float tempValueFiltered {0.0};
 // motor controller vars
 enum FanAction {stop, spinForward, spinBackward};
 FanAction fanAction {FanAction::spinForward};
-uint8_t fanActionPin0 {2};
-uint8_t fanActionPin1 {3};
-uint8_t fanPwmPin{9};
+uint8_t fan1ActionPin0 {2};
+uint8_t fan1ActionPin1 {3};
+uint8_t fan2ActionPin0 {4};
+uint8_t fan2ActionPin1 {5};
+uint8_t fan1PwmPin{9};
+uint8_t fan2PwmPin{10};
 float fanCutOnLimit {70.0};
 float fanSpeedPercent {100.0};
 char param {'_'};
@@ -78,9 +81,12 @@ void setup() {
 
   // setup temp sensor
   pinMode(tempSensorPin, INPUT);
-  pinMode(fanActionPin0, OUTPUT);
-  pinMode(fanActionPin1, OUTPUT);
-  pinMode(fanPwmPin, OUTPUT);
+  pinMode(fan1ActionPin0, OUTPUT);
+  pinMode(fan1ActionPin1, OUTPUT);
+  pinMode(fan2ActionPin0, OUTPUT);
+  pinMode(fan2ActionPin1, OUTPUT);
+  pinMode(fan1PwmPin, OUTPUT);
+  pinMode(fan2PwmPin, OUTPUT);
 
   // write the parameters to memory
   // putParameters();  
@@ -184,16 +190,20 @@ void loop() {
   // ----------------- Outputs -----------------
   // control fan state
   if (fanAction == FanAction::spinForward) {
-    digitalWrite(fanActionPin0, HIGH);
-    digitalWrite(fanActionPin1, LOW);
+    digitalWrite(fan1ActionPin0, HIGH);
+    digitalWrite(fan1ActionPin1, LOW);
+    digitalWrite(fan2ActionPin0, LOW);
+    digitalWrite(fan2ActionPin1, HIGH);
   }
 
   // control fan speed based on state
   if (fanAction == FanAction::stop || fanSpeedPercent < fanCutOnLimit) {
     // set pwm out to zero rather than "locking" the fan
-    Timer1.pwm(fanPwmPin, 0);
+    Timer1.pwm(fan1PwmPin, 0);
+    Timer1.pwm(fan2PwmPin, 0);
   } else {
-    Timer1.pwm(fanPwmPin, 1023*(fanSpeedPercent/100));
+    Timer1.pwm(fan1PwmPin, 1023*(fanSpeedPercent/100));
+    Timer1.pwm(fan2PwmPin, 1023*(fanSpeedPercent/100));
   }
 
   // ----------------- Diagnostics -----------------
