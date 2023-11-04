@@ -9,11 +9,12 @@
 // temp sensor vars
 uint8_t tempSensorPin {A1};
 uint16_t tempValueRaw {0};
+float alpha {0.50};
+float tempValueConverted {0.0};
 float tempValueFiltered {0.0};
+TON tempPollTimer {TON(millis, 500)};
 
 // motor controller vars
-enum FanAction {stop, spinForward, spinBackward};
-FanAction fanAction {FanAction::spinForward};
 uint8_t fan1ActionPin0 {2};
 uint8_t fan1ActionPin1 {3};
 uint8_t fan2ActionPin0 {4};
@@ -53,6 +54,7 @@ void putParameters()
   EEPROM.put(address, pid.setpoint); address += sizeof(pid.setpoint);
   EEPROM.put(address, pid.deadband); address += sizeof(pid.deadband);
   EEPROM.put(address, fanCutOnLimit); address += sizeof(fanCutOnLimit);
+  EEPROM.put(address, alpha); address += sizeof(alpha);
 }
 
 
@@ -69,6 +71,7 @@ void getParameters()
   pid.setpoint = EEPROM.get(address, pid.setpoint); address += sizeof(pid.setpoint);
   pid.deadband = EEPROM.get(address, pid.deadband); address += sizeof(pid.deadband);
   fanCutOnLimit = EEPROM.get(address, fanCutOnLimit); address += sizeof(fanCutOnLimit);
+  alpha = EEPROM.get(address, alpha); address += sizeof(alpha);
 }
 
 
@@ -88,6 +91,12 @@ void setup() {
   pinMode(fan1PwmPin, OUTPUT);
   pinMode(fan2PwmPin, OUTPUT);
 
+  // set the fan direction to forward for both fans
+  digitalWrite(fan1ActionPin0, HIGH);
+  digitalWrite(fan1ActionPin1, LOW);
+  digitalWrite(fan2ActionPin0, LOW);
+  digitalWrite(fan2ActionPin1, HIGH);
+
   // write the parameters to memory
   // putParameters();  
   // read in params from memory
@@ -99,7 +108,15 @@ void loop() {
 
   // ----------------- Inputs -----------------
   tempValueRaw = analogRead(tempSensorPin);
-  tempValueFiltered = (-0.50)*static_cast<float>(tempValueRaw) + 177.5;
+  tempValueConverted = (-0.50)*static_cast<float>(tempValueRaw) + 177.5;
+
+  // low pass filter to steady the temp readings
+  if (tempPollTimer.call(!tempPollTimer.DN).DN) {
+    tempValueFiltered = (tempValueFiltered * alpha) + ( (1.0 - alpha) * tempValueConverted );
+    if (isnan(tempValueFiltered)) {
+      tempValueFiltered = tempValueConverted;
+    }
+  }
 
   if (Serial.available()) {
     bool printParameters = false;
@@ -114,6 +131,7 @@ void loop() {
         Serial.println("i<float> sets the pid integral gain.");
         Serial.println("d<float> sets the pid derivative gain.");
         Serial.println("c<float> sets the fan cut on/off limit.");
+        Serial.println("a<float> sets the temperature low pass gain.");
         Serial.println("t toggles data streaming from the pid.s");
         Serial.println("o prints the live parameters");
         Serial.println("r reads the parameters from memory.");
@@ -151,6 +169,11 @@ void loop() {
         Serial.print("fan on/off limit = "); Serial.println(fanCutOnLimit);
         break;
 
+      case 'a':  // temp sensor low pass gain
+        alpha = Serial.parseFloat();
+        Serial.print("low pass gain = "); Serial.println(alpha);
+        break;
+
       case 't':  // toggles the streaming of the values
         streamData = !streamData;
         Serial.print("streamData = "); Serial.println(streamData);
@@ -179,6 +202,7 @@ void loop() {
       Serial.print("pid.setpoint = "); Serial.println(pid.setpoint); 
       Serial.print("pid.deadband = "); Serial.println(pid.deadband); 
       Serial.print("fan on/off limit = "); Serial.println(fanCutOnLimit);
+      Serial.print("temperature low pass gain = "); Serial.println(alpha);
     }
   }
   
@@ -188,16 +212,9 @@ void loop() {
 
 
   // ----------------- Outputs -----------------
-  // control fan state
-  if (fanAction == FanAction::spinForward) {
-    digitalWrite(fan1ActionPin0, HIGH);
-    digitalWrite(fan1ActionPin1, LOW);
-    digitalWrite(fan2ActionPin0, LOW);
-    digitalWrite(fan2ActionPin1, HIGH);
-  }
 
   // control fan speed based on state
-  if (fanAction == FanAction::stop || fanSpeedPercent < fanCutOnLimit) {
+  if (fanSpeedPercent < fanCutOnLimit) {
     // set pwm out to zero rather than "locking" the fan
     Timer1.pwm(fan1PwmPin, 0);
     Timer1.pwm(fan2PwmPin, 0);
